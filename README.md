@@ -9,7 +9,7 @@ The flow is as follows:
 extra note: in a real project guards for who accesses the NestJS API would be necessary, along with entire pipelines for input validation / transformation and error handling;  
 
 - the NextJS backend sends request to NestJS to create a long-running task; it receives its ID and current state (WAITING) which is then given back to the client;
-- the client initiates a websocket connection to the NextJS backend to listen for updates to the task
+- the client initiates a websocket connection to the NextJS backend to listen for updates to the task (currently implementing this via tRPC's subscribe hooks)
 - the NextJS backend also initiates a websocket connection to listen for updates from the NestJS backend
 - in the meantime, when the task request was received, the NestJS backend adds a job to the queue
 - (when the job starts it sets the task status to IN PROGRESS) the job simulates a long-running process by generating a number 1-10 to use for a delay (s); at the end it sets the task status to FINISHED
