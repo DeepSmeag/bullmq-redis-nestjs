@@ -41,7 +41,7 @@ export class AppService {
                 'IN PROGRESS',
                 'FINISHED',
                 'ERROR',
-              ][Math.floor(Math.random() * 4)],
+              ][Math.floor(Math.random() * 10)],
             },
           }) as MessageEvent,
       ),
