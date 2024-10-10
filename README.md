@@ -9,10 +9,16 @@ The flow is as follows:
 extra note: in a real project guards for who accesses the NestJS API would be necessary, along with entire pipelines for input validation / transformation and error handling;  
 
 - the NextJS backend sends request to NestJS to create a long-running task; it receives its ID and current state (WAITING) which is then given back to the client;
-- the client initiates a websocket connection to the NextJS backend to listen for updates to the task (currently implementing this via tRPC's subscribe hooks)
-- the NextJS backend also initiates a websocket connection to listen for updates from the NestJS backend
+- the client initiates a SSE connection to the NextJS backend to listen for updates to the task (implemented via tRPC's useSubscription hook + httpSubscription terminating link)
+- the NextJS backend also initiates a SSE connection to listen for updates from the NestJS backend
 - in the meantime, when the task request was received, the NestJS backend adds a job to the queue
 - (when the job starts it sets the task status to IN PROGRESS) the job simulates a long-running process by generating a number 1-10 to use for a delay (s); at the end it sets the task status to FINISHED
 - there is a 1 in 10 chance (randomly generate number) to throw an error; in this situation, the job ends without retrying and the status is set to ERROR  
 (note) generally, having a retry strategy would be the case; in this situation it's not relevant
-- once a finishing status is received on the client (FINISHED/ERROR), the websocket is closed
+- once a finishing status is received on the client (FINISHED/ERROR), the connection is closed (subscription is disabled)
+
+
+### Some scaling issues to consider  
+
+- if the system is distributed via load balancer with multiple servers, does it still work?
+- does the client update get sent to the right client and only that client?
