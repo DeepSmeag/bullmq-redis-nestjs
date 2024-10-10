@@ -11,7 +11,7 @@ export default function StatusMonitor() {
     setRequestId(response.id); // Set requestId after sending request
     setStatus(response.status);
   };
-  const unsubscribe = api.request.subscribeToRequest.useSubscription(
+  api.request.subscribeToRequest.useSubscription(
     { id: requestId, lastEventId: 0 },
     {
       onData(data) {
