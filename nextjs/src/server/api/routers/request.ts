@@ -53,6 +53,7 @@ export const requestRouter = createTRPCRouter({
       }),
     )
     .subscription(async function* (opts) {
+      let readerObject = null;
       try {
         if (opts.input.id === null) {
           return;
@@ -62,56 +63,45 @@ export const requestRouter = createTRPCRouter({
           yield tracked("error", { status: "ERROR" });
           return;
         }
+        opts.signal?.throwIfAborted();
+        readerObject = reader;
 
-        try {
-          //TODO: need to cleanup connection to stop it continuing after client disconnects from subscription
-          let streamActive = true;
-          const textDecoder = new TextDecoder();
-          while (streamActive) {
-            const { done, value } = await reader.read();
-            if (done) {
-              streamActive = false;
-              continue;
-            }
-            const chunk = textDecoder.decode(value);
-            const lines = chunk.trim().split("\n");
-            for (const line of lines) {
-              if (line.startsWith("data:")) {
-                const data = JSON.parse(line.slice(5)) as {
-                  status: string;
-                }; // eliminating 'data:'
-                console.log(data);
-                yield tracked("whatever", { status: data.status });
+        let streamActive = true;
+        const textDecoder = new TextDecoder();
+        while (streamActive) {
+          const { done, value } = await readerObject.read();
+          if (done) {
+            streamActive = false;
+            continue;
+          }
+          const chunk = textDecoder.decode(value);
+          const lines = chunk.trim().split("\n");
+          for (const line of lines) {
+            if (line.startsWith("data:")) {
+              const data = JSON.parse(line.slice(5)) as {
+                status: string;
+              }; // eliminating 'data:' from string
+              console.log(data, "for id ", opts.input.id);
+              yield tracked("whatever", { status: data.status });
 
-                if (data.status === "FINISHED" || data.status === "ERROR") {
-                  streamActive = false;
-                  await reader.cancel();
-                  break;
-                }
+              if (data.status === "FINISHED" || data.status === "ERROR") {
+                streamActive = false;
+                await reader.cancel();
+                break;
               }
             }
           }
-        } finally {
-          console.log("Aborted with reader");
-          await reader.cancel();
         }
+      } catch {
+        // to get rid of false positive error
+        console.log("error");
       } finally {
-        console.log("Aborted");
+        if (readerObject) {
+          await readerObject.cancel();
+        }
       }
 
       // for complete safety, we would need to add a ReadableStream or another way of catching events the client might have missed in a sudden disconnect
-
-      // while (index < 5) {
-      //   index++;
-      //   yield tracked(index.toString(), { status: "IN PROGRESS" });
-      //   await new Promise((resolve) => setTimeout(resolve, 1000));
-      // }
-      // // random number generate
-      // const random = Math.random();
-      // if (random < 0.5) {
-      //   yield tracked(index.toString(), { status: "ERROR" });
-      //   return;
-      // }
-      // yield tracked(index.toString(), { status: "FINISHED" });
+      // in this case...it's highly unlikely that the client will miss any events since it's not suddenly fetching data while updates are happening
     }),
 });

@@ -11,7 +11,7 @@ export class AppService {
   requests: JobRequest[] = [];
 
   getHello(): string {
-    return 'Hello World!';
+    return JSON.stringify(this.requests);
   }
   createRequest(): JobRequest {
     const lastRequest = this.requests[this.requests.length - 1];
@@ -19,6 +19,7 @@ export class AppService {
       id: lastRequest ? String(Number(lastRequest.id) + 1) : '1',
       status: 'WAITING',
     };
+    this.requests.push(newRequest);
     return newRequest;
   }
   sseRequest(): Observable<MessageEvent> {
