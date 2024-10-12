@@ -1,9 +1,13 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { zAsyncGenerator } from "../zAsyncGenerator";
 import { tracked } from "@trpc/server";
 import EventEmitter from "events";
+import { type ConfirmChannel } from "amqplib";
+import amqp, { type ChannelWrapper } from "amqp-connection-manager";
 
 // In a real app, you'd probably use Redis or something
 export const ee = new EventEmitter();
@@ -53,55 +57,54 @@ export const requestRouter = createTRPCRouter({
       }),
     )
     .subscription(async function* (opts) {
-      let readerObject = null;
-      try {
-        if (opts.input.id === null) {
-          return;
-        }
-        const { reader, status } = await sseRequest(opts.input.id);
-        if (!reader) {
-          yield tracked("error", { status: "ERROR" });
-          return;
-        }
-        opts.signal?.throwIfAborted();
-        readerObject = reader;
-
-        let streamActive = true;
-        const textDecoder = new TextDecoder();
-        while (streamActive) {
-          const { done, value } = await readerObject.read();
-          if (done) {
-            streamActive = false;
-            continue;
-          }
-          const chunk = textDecoder.decode(value);
-          const lines = chunk.trim().split("\n");
-          for (const line of lines) {
-            if (line.startsWith("data:")) {
-              const data = JSON.parse(line.slice(5)) as {
-                status: string;
-              }; // eliminating 'data:' from string
-              console.log(data, "for id ", opts.input.id);
-              yield tracked("whatever", { status: data.status });
-
-              if (data.status === "FINISHED" || data.status === "ERROR") {
-                streamActive = false;
-                await reader.cancel();
-                break;
-              }
-            }
-          }
-        }
-      } catch {
-        // to get rid of false positive error
-        console.log("error");
-      } finally {
-        if (readerObject) {
-          await readerObject.cancel();
-        }
+      if (opts.input.id === null) {
+        return;
       }
+      const connection = amqp.connect("amqp://localhost");
+      const exchange = "tasks_exchange";
+      const channel: ChannelWrapper = connection.createChannel();
+      let queue: string;
+      await channel.addSetup(async (ch: ConfirmChannel) => {
+        await ch.assertExchange(exchange, "direct", { durable: true });
+        const queueObject = await channel.assertQueue("", {
+          exclusive: true,
+        });
+        queue = queueObject.queue;
+        await channel
+          .bindQueue(queue, exchange, opts.input.id!)
+          .catch((err) => {
+            console.error("Error binding queue to exchange");
+          });
+      });
 
-      // for complete safety, we would need to add a ReadableStream or another way of catching events the client might have missed in a sudden disconnect
-      // in this case...it's highly unlikely that the client will miss any events since it's not suddenly fetching data while updates are happening
+      try {
+        // Consume messages from RabbitMQ and yield updates
+        while (true) {
+          const statusUpdate = await new Promise<string>((resolve, reject) => {
+            void channel.consume(
+              queue,
+              (msg) => {
+                if (msg !== null) {
+                  const statusUpdate = msg.content.toString();
+                  channel.ack(msg); // Acknowledge the message
+                  resolve(statusUpdate);
+                }
+              },
+              { noAck: false }, // Requires acknowledgement
+            );
+          });
+
+          // Yield the status update
+          yield tracked(opts.input.id, { status: statusUpdate });
+
+          // Close the connection if the task is finished or errored
+          if (statusUpdate === "FINISHED" || statusUpdate === "ERROR") {
+            await connection.close();
+            break;
+          }
+        }
+      } finally {
+        await connection.close();
+      }
     }),
 });
