@@ -1,25 +1,31 @@
 import { Injectable } from '@nestjs/common';
 import { interval, map, Observable } from 'rxjs';
+import { v4 as uuidv4 } from 'uuid';
+import { RequestQueueService } from './request-queue/request-queue.service';
 export type JobRequest = {
   id: string;
-  status: 'WAITING' | 'IN PROGRESS' | 'FINISHED' | 'ERROR';
+  status: 'NOT STARTED' | 'WAITING' | 'IN PROGRESS' | 'FINISHED' | 'ERROR';
 };
 
 @Injectable()
 export class AppService {
+  constructor(private readonly requestQueueService: RequestQueueService) {}
   // temporary array of requests
   requests: JobRequest[] = [];
 
   getHello(): string {
     return JSON.stringify(this.requests);
   }
+
   createRequest(): JobRequest {
-    const lastRequest = this.requests[this.requests.length - 1];
     const newRequest: JobRequest = {
-      id: lastRequest ? String(Number(lastRequest.id) + 1) : '1',
-      status: 'WAITING',
+      id: uuidv4(),
+      status: 'NOT STARTED',
     };
     this.requests.push(newRequest);
+    setTimeout(() => {
+      this.requestQueueService.publishStatusUpdate(newRequest.id);
+    }, 200);
     return newRequest;
   }
   sseRequest(): Observable<MessageEvent> {
