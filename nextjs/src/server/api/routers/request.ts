@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
@@ -81,10 +79,15 @@ export const requestRouter = createTRPCRouter({
             });
           // Consume messages and emit status updates
           void channel.consume(queue, (msg) => {
-            const statusUpdate = msg.content.toString();
-            console.log("Received status update", statusUpdate);
-            taskEmitter.emit(opts.input.id!, statusUpdate); // Emit status update
-            channel.ack(msg); // Acknowledge the message
+            if (!msg) {
+              console.log("Server cancelled this queue", queue);
+              connection.close();
+            } else {
+              const statusUpdate = msg.content.toString();
+              console.log("Received status update", statusUpdate);
+              taskEmitter.emit(opts.input.id!, statusUpdate); // Emit status update
+              channel.ack(msg); // Acknowledge the message
+            }
           });
         });
         // Listen to task updates using the EventEmitter
@@ -111,5 +114,9 @@ export const requestRouter = createTRPCRouter({
       } finally {
         await connection.close();
       }
+
+      //TODO: need to check if solution is viable for multiple clients and does not leak memory over time
+      //! Fixed queue staying up after client disconnects by checking msg===null and closing connection
+      //TODO: check if the emitters leak memory
     }),
 });
