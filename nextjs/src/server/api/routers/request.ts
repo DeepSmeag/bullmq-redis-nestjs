@@ -9,7 +9,6 @@ import amqp, { type ChannelWrapper } from "amqp-connection-manager";
 
 // In a real app, you'd probably use Redis or something
 class TaskEventEmitter extends EventEmitter {}
-
 export type JobRequest = {
   id: string;
   status: "WAITING" | "IN PROGRESS" | "FINISHED" | "ERROR";
@@ -57,13 +56,18 @@ export const requestRouter = createTRPCRouter({
     )
     .subscription(async function* (opts) {
       if (opts.input.id === null) {
+        yield tracked("NULL", { status: "ERROR" });
         return;
       }
-
+      const { signal } = opts;
       const connection = amqp.connect("amqp://localhost");
+      const handleAbort = async () => {
+        await connection.close();
+      };
+      new Promise(() => signal?.addEventListener("abort", handleAbort));
       const exchange = "tasks_exchange";
+      const taskEmitter = new TaskEventEmitter();
       try {
-        const taskEmitter = new TaskEventEmitter();
         const channel: ChannelWrapper = connection.createChannel();
         let queue: string;
         await channel.addSetup(async (ch: ConfirmChannel) => {
@@ -78,45 +82,41 @@ export const requestRouter = createTRPCRouter({
               console.error("Error binding queue to exchange");
             });
           // Consume messages and emit status updates
-          void channel.consume(queue, (msg) => {
-            if (!msg) {
-              console.log("Server cancelled this queue", queue);
-              connection.close();
-            } else {
-              const statusUpdate = msg.content.toString();
-              console.log("Received status update", statusUpdate);
-              taskEmitter.emit(opts.input.id!, statusUpdate); // Emit status update
-              channel.ack(msg); // Acknowledge the message
-            }
-          });
+          void channel
+            .consume(queue, (msg) => {
+              if (!msg) {
+                console.log("Server cancelled this queue", queue);
+              } else {
+                const statusUpdate = msg.content.toString();
+                taskEmitter.emit(opts.input.id!, statusUpdate); // Emit status update
+                channel.ack(msg); // Acknowledge the message
+              }
+            })
+            .catch((err) => {
+              console.error("Error consuming messages");
+            });
         });
-        // Listen to task updates using the EventEmitter
-        const taskListener = (status: string) => {
-          taskEmitter.emit("status", status); // Emit status updates
-        };
-
-        // Listen for task updates
-        taskEmitter.on(opts.input.id, taskListener);
-        console.log("Subscribed to task updates");
-        // Consume messages from RabbitMQ and yield updates
-        // Yield each status update as it comes in
-        for await (const statusUpdate of on(taskEmitter, "status")) {
+        // Yield each status update from the emitter as it comes it
+        for await (const statusUpdate of on(taskEmitter, opts.input.id)) {
           const status = statusUpdate[0] as unknown as string;
-          console.log("Yielding status update", status);
           yield tracked(opts.input.id, { status });
 
           if (status === "FINISHED" || status === "ERROR") {
-            taskEmitter.removeListener(opts.input.id, taskListener); // Clean up the listener
             await connection.close(); // Close the connection
             break; // Exit when the task is finished or errored
           }
         }
+      } catch (err) {
+        console.log("Error on subscription??");
       } finally {
-        await connection.close();
+        taskEmitter.removeAllListeners(opts.input.id); // Clean up the listener
+        signal?.removeEventListener("abort", handleAbort);
       }
-
       //TODO: need to check if solution is viable for multiple clients and does not leak memory over time
       //! Fixed queue staying up after client disconnects by checking msg===null and closing connection
       //TODO: check if the emitters leak memory
+      //TODO: apparently the connection is not closed properly so some queues remain up; in reality the situation would not arise because a user would not be able to spam requests like this...but still want to figure it out
+      //! UPDATE: fixed the queue leak through the use of the signal event listener for abort
+      // for some reason it did not work simply by closing the connection in the finally block...
     }),
 });
