@@ -49,3 +49,6 @@ extra note: in a real project guards for who accesses the NestJS API would be ne
 - also a common use-case for larger application with more demanding tasks that take a while to process and need to be done async, but we still want to have updates on their situation without manually polling
 - I would recommend using persistent queues (RabbitMQ most configurable I'd say, BullMQ if using Nestjs and want some job queue solution) in all situations where async, decoupled execution is needed; it scales nicely as well, with a single RabbitMQ instance being able to serve 32000 concurrent queues (where each queue could be attached to 1 or more server instances) easily, based on some searches
 - microservices would most likely require persistent queue mechanisms
+
+## A graph of the information flow (read top-down)
+![Flow Overview](flowOverview.svg)
