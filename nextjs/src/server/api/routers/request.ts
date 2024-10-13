@@ -64,11 +64,11 @@ export const requestRouter = createTRPCRouter({
       const handleAbort = async () => {
         await connection.close();
       };
-      new Promise(() => signal?.addEventListener("abort", handleAbort));
+      signal?.addEventListener("abort", handleAbort);
       const exchange = "tasks_exchange";
       const taskEmitter = new TaskEventEmitter();
+      const channel: ChannelWrapper = connection.createChannel();
       try {
-        const channel: ChannelWrapper = connection.createChannel();
         let queue: string;
         await channel.addSetup(async (ch: ConfirmChannel) => {
           await ch.assertExchange(exchange, "direct", { durable: true });
@@ -111,12 +111,8 @@ export const requestRouter = createTRPCRouter({
       } finally {
         taskEmitter.removeAllListeners(opts.input.id); // Clean up the listener
         signal?.removeEventListener("abort", handleAbort);
+
+        await channel.close();
       }
-      //TODO: need to check if solution is viable for multiple clients and does not leak memory over time
-      //! Fixed queue staying up after client disconnects by checking msg===null and closing connection
-      //TODO: check if the emitters leak memory
-      //TODO: apparently the connection is not closed properly so some queues remain up; in reality the situation would not arise because a user would not be able to spam requests like this...but still want to figure it out
-      //! UPDATE: fixed the queue leak through the use of the signal event listener for abort
-      // for some reason it did not work simply by closing the connection in the finally block...
     }),
 });
