@@ -3,22 +3,22 @@ import { Job } from 'bullmq';
 import { JobRequest } from 'src/app.service';
 import { RequestQueueService } from 'src/request-queue/request-queue.service';
 
-@Processor('jobqueue', { concurrency: 1 })
+@Processor('jobqueue', { concurrency: 5 })
 export class WorkerQueueProcessorService extends WorkerHost {
   constructor(private requestQueueService: RequestQueueService) {
     super();
   }
-  process(
-    job: Job<JobRequest, JobRequest, string>,
-    token?: string,
-  ): Promise<any> {
-    const taskID = job.data.id;
+  process(job: Job<JobRequest, JobRequest, string>): Promise<any> {
+    // const taskID = job.data.id;
     const finalStatus = Math.random() > 0.5 ? 'FINISHED' : 'ERROR';
     const randWait = Math.floor(Math.random() * 3000) + 3000;
-    console.log(
-      `[x] WorkerQueue: Received task ID ${taskID} with token ${token}; waiting ${randWait}ms`,
-    );
-
+    // console.log(
+    //   `[x] WorkerQueue: Received task ID ${taskID} with token ${token}; waiting ${randWait}ms`,
+    // );
+    // if (finalStatus === 'ERROR') {
+    //   throw new Error('Task failed');
+    // }
+    //! If I throw error here, the 'failed' event will be triggered
     return new Promise((resolve, reject) => {
       setTimeout(() => {
         if (finalStatus === 'FINISHED') {
@@ -26,6 +26,7 @@ export class WorkerQueueProcessorService extends WorkerHost {
           finishedJob.status = 'FINISHED';
           resolve(finishedJob);
         } else {
+          //! If I throw error here, the Nestjs runtime throws an error
           reject(new Error('Task failed'));
         }
       }, randWait);
@@ -49,6 +50,7 @@ export class WorkerQueueProcessorService extends WorkerHost {
   @OnWorkerEvent('error')
   async onError(job: Job<JobRequest, JobRequest, string>) {
     console.log(`Job ${job.id} error`);
+    //! This event is triggered when the worker itself has unhandled errors; not related to my code
     // ERROR
     await this.requestQueueService.publishStatusUpdate(job.data.id, 'ERROR');
   }
@@ -57,5 +59,18 @@ export class WorkerQueueProcessorService extends WorkerHost {
     console.log(`Job ${job.id} paused`);
     //WAITING
     await this.requestQueueService.publishStatusUpdate(job.data.id, 'WAITING');
+  }
+  @OnWorkerEvent('stalled')
+  async onStalled(job: Job<JobRequest, JobRequest, string>) {
+    console.log(`Job ${job.id} stalled`);
+    //WAITING
+    await this.requestQueueService.publishStatusUpdate(job.data.id, 'WAITING');
+  }
+  @OnWorkerEvent('failed')
+  async onFailed(job: Job<JobRequest, JobRequest, string>) {
+    console.log(`Job ${job.id} failed`);
+    //! This is the event that is triggered when the job fails via the throw new Error('Task failed') or reject()
+    //ERROR
+    await this.requestQueueService.publishStatusUpdate(job.data.id, 'ERROR');
   }
 }

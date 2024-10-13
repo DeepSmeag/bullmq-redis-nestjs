@@ -25,7 +25,7 @@ export class RequestQueueService implements OnModuleInit {
         await channel.assertQueue(queue, { durable: true });
         await channel.bindQueue(queue, exchange, 'worker_queue');
         await channel.consume(queue, async (message) => {
-          console.log('Received message', message.content.toString());
+          // console.log('Received message', message.content.toString());
           await this.workerQueueService.publishJob({
             id: message.content.toString(),
             status: 'NOT STARTED',
@@ -46,7 +46,7 @@ export class RequestQueueService implements OnModuleInit {
       'worker_queue',
       Buffer.from(taskID),
     );
-    console.log(`Published taskID ${taskID}`);
+    // console.log(`Published taskID ${taskID}`);
   }
   public async publishStatusUpdate(taskID: string, status: string) {
     await this.channelWrapper.publish(
@@ -54,6 +54,6 @@ export class RequestQueueService implements OnModuleInit {
       taskID,
       Buffer.from(status),
     );
-    console.log(`Published status update for ${taskID}: ${status}`);
+    // console.log(`Published status update for ${taskID}: ${status}`);
   }
 }

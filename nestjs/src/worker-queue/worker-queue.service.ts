@@ -7,6 +7,6 @@ import { JobRequest } from 'src/app.service';
 export class WorkerQueueService {
   constructor(@InjectQueue('jobqueue') private readonly jobqueue: Queue) {}
   async publishJob(job: JobRequest) {
-    await this.jobqueue.add('process', job, { delay: 500 });
+    await this.jobqueue.add('process', job);
   }
 }

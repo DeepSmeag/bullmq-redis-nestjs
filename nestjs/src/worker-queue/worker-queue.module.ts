@@ -14,6 +14,11 @@ import { RequestQueueService } from 'src/request-queue/request-queue.service';
     }),
     BullModule.registerQueue({
       name: 'jobqueue',
+      defaultJobOptions: {
+        removeOnComplete: true,
+        removeOnFail: true,
+        delay: 500,
+      },
     }),
   ],
   providers: [

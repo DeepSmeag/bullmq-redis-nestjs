@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { interval, map, Observable } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
 import { RequestQueueService } from './request-queue/request-queue.service';
 export type JobRequest = {
