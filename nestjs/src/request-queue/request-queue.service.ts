@@ -1,11 +1,14 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import amqp, { ChannelWrapper } from 'amqp-connection-manager';
 import { ConfirmChannel } from 'amqplib';
+import { WorkerQueueService } from 'src/worker-queue/worker-queue.service';
 
 @Injectable()
 export class RequestQueueService implements OnModuleInit {
   private channelWrapper: ChannelWrapper;
-  constructor() {
+  constructor(
+    @Inject() private readonly workerQueueService: WorkerQueueService,
+  ) {
     const connection = amqp.connect(['amqp://localhost']);
     this.channelWrapper = connection.createChannel({
       setup: () => {
@@ -23,32 +26,12 @@ export class RequestQueueService implements OnModuleInit {
         await channel.bindQueue(queue, exchange, 'worker_queue');
         await channel.consume(queue, async (message) => {
           console.log('Received message', message.content.toString());
+          await this.workerQueueService.publishJob({
+            id: message.content.toString(),
+            status: 'NOT STARTED',
+          });
           channel.ack(message);
-          const taskID = message.content.toString();
-          console.log(`[x] Received task ID ${taskID}`);
-
-          // Simulate sending status updates as the task progresses
-          const sendStatusUpdate = (status: string) => {
-            channel.publish(exchange, taskID, Buffer.from(status));
-            console.log(`[x] Sent status update: ${status}`);
-          };
-
-          // Simulate task execution
-          console.log(`Sending WAITING for ${taskID}`);
-          sendStatusUpdate('WAITING');
-
-          setTimeout(() => {
-            console.log(`Sending IN PROGRESS for ${taskID}`);
-            sendStatusUpdate('IN PROGRESS');
-
-            // Simulate a 3-5 second delay
-            const delay = Math.floor(Math.random() * 3000) + 3000;
-            setTimeout(() => {
-              const finalStatus = Math.random() > 0.5 ? 'FINISHED' : 'ERROR';
-              console.log(`Sending ${finalStatus} for ${taskID}`);
-              sendStatusUpdate(finalStatus);
-            }, delay);
-          }, 1000);
+          await this.publishStatusUpdate(message.content.toString(), 'WAITING');
         });
       });
     } catch (err) {
@@ -57,12 +40,20 @@ export class RequestQueueService implements OnModuleInit {
       console.log('Consumer ready');
     }
   }
-  public async publishStatusUpdate(taskID: string) {
+  public async publishTask(taskID: string) {
     await this.channelWrapper.publish(
       'tasks_exchange',
       'worker_queue',
       Buffer.from(taskID),
     );
     console.log(`Published taskID ${taskID}`);
+  }
+  public async publishStatusUpdate(taskID: string, status: string) {
+    await this.channelWrapper.publish(
+      'tasks_exchange',
+      taskID,
+      Buffer.from(status),
+    );
+    console.log(`Published status update for ${taskID}: ${status}`);
   }
 }

@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { RequestQueueService } from './request-queue/request-queue.service';
+
+import { RequestQueueModule } from './request-queue/request-queue.module';
 
 @Module({
-  imports: [],
+  imports: [RequestQueueModule],
   controllers: [AppController],
-  providers: [AppService, RequestQueueService],
+  providers: [AppService],
 })
 export class AppModule {}

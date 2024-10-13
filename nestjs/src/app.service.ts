@@ -24,7 +24,7 @@ export class AppService {
     };
     this.requests.push(newRequest);
     setTimeout(() => {
-      this.requestQueueService.publishStatusUpdate(newRequest.id);
+      this.requestQueueService.publishTask(newRequest.id);
     }, 200);
     return newRequest;
   }
